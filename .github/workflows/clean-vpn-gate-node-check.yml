@@ -1,0 +1,57 @@
+name: Clean VPN Gate Node Check Runs
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+      REPO: ${{ github.repository }}
+      WF_ID_VPNCHECK: 377545271
+      WF_ID_SELF: 379230555
+    steps:
+      - name: VPN工作流保留最新1条，Clean自身全部清空
+        run: |
+          set -e
+
+          # ========== 1. 处理 VPN Gate Node Check：保留最新1条 ==========
+          echo "==================== 处理 VPN Gate Node Check (377545271) ===================="
+          WORKFLOW_ID=$WF_ID_VPNCHECK
+          RUN_IDS=$(gh api --paginate "/repos/$REPO/actions/workflows/$WORKFLOW_ID/runs" | jq -r '.workflow_runs[] | select(.conclusion != null) | .id')
+          if [ -n "$RUN_IDS" ]; then
+            RUN_ARR=($RUN_IDS)
+            TOTAL=${#RUN_ARR[@]}
+            echo ">> VPN工作流一共 $TOTAL 条已完成记录"
+            if [ "$TOTAL" -gt 1 ]; then
+              for ((i=1;i<TOTAL;i++)); do
+                rid=${RUN_ARR[$i]}
+                echo "删除VPN旧Run: $rid"
+                gh api -X DELETE "/repos/$REPO/actions/runs/$rid" || true
+                sleep 0.3
+              done
+            fi
+          else
+            echo ">> VPN工作流无已完成记录"
+          fi
+
+          # ========== 2. 处理 Clean自身工作流：全部删除，一条不留 ==========
+          echo -e "\n==================== 处理 Clean VPN Gate Node Check Runs (379230555) 全部清空 ===================="
+          WORKFLOW_ID=$WF_ID_SELF
+          RUN_IDS=$(gh api --paginate "/repos/$REPO/actions/workflows/$WORKFLOW_ID/runs" | jq -r '.workflow_runs[] | select(.conclusion != null) | .id')
+          if [ -n "$RUN_IDS" ]; then
+            RUN_ARR=($RUN_IDS)
+            TOTAL=${#RUN_ARR[@]}
+            echo ">> Clean工作流一共 $TOTAL 条已完成记录，全部删除"
+            for rid in "${RUN_ARR[@]}"; do
+              echo "删除Clean旧Run: $rid"
+              gh api -X DELETE "/repos/$REPO/actions/runs/$rid" || true
+              sleep 0.3
+            done
+          else
+            echo ">> Clean工作流无已完成记录"
+          fi
+
+          echo -e "\n✅ 清理任务执行完毕"
